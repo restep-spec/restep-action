@@ -1,0 +1,130 @@
+# restep-action · GitHub Action compuesta para comprobar una API Restep 1 en cada PR.
+# Los valores de los inputs llegan a los pasos como variables de entorno, nunca interpolados en
+# el script, para que un valor con comillas o $() no se ejecute.
+name: Restep check
+description: Comprueba la conformidad con Restep 1 (restep-check) y, con un descubrimiento base, la compatibilidad (restep-diff)
+author: restep
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  url:
+    description: Raíz de la API, por ejemplo http://localhost:8080/
+    required: true
+  start-command:
+    description: Orden que arranca la API en segundo plano; la acción la para al terminar
+    required: false
+    default: ''
+  wait-for:
+    description: URL que debe responder antes de empezar (por defecto, url); solo con start-command
+    required: false
+    default: ''
+  wait-timeout:
+    description: Segundos de espera máxima a wait-for
+    required: false
+    default: '60'
+  profiles:
+    description: Perfiles y extensiones que la API debe anunciar, separados por comas (core,query,writes)
+    required: false
+    default: ''
+  writes:
+    description: true para que restep-check cree, cambie y borre sus propios elementos (--writes)
+    required: false
+    default: 'false'
+  headers:
+    description: Cabeceras para todas las peticiones, una por línea (Authorization, Bearer …)
+    required: false
+    default: ''
+  base-discovery:
+    description: Documento de descubrimiento de la rama base (archivo o URL) para comparar con restep-diff
+    required: false
+    default: ''
+  comment:
+    description: true para publicar el resultado como comentario de la PR (actualiza siempre el mismo)
+    required: false
+    default: 'false'
+  fail-on-error:
+    description: true para que el job falle si falla un DEBE, falta un perfil o hay un cambio incompatible
+    required: false
+    default: 'true'
+  restep-check:
+    description: Orden que ejecuta restep-check
+    required: false
+    default: npx --yes restep-check@0.4
+  restep-diff:
+    description: Orden que ejecuta restep-diff
+    required: false
+    default: npx --yes github:restep-spec/restep-diff#v0.1.0
+  github-token:
+    description: Token para comentar en la PR (necesita pull-requests write)
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  result:
+    description: pass o fail
+    value: ${{ steps.report.outputs.result }}
+  check-failures:
+    description: Número de comprobaciones DEBE que fallan
+    value: ${{ steps.report.outputs.check-failures }}
+  breaking:
+    description: true si restep-diff encuentra cambios incompatibles
+    value: ${{ steps.report.outputs.breaking }}
+  summary-file:
+    description: Ruta del informe en Markdown
+    value: ${{ steps.report.outputs.summary-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Arrancar la API
+      id: start
+      if: inputs.start-command != ''
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_START_COMMAND: ${{ inputs.start-command }}
+        INPUT_WAIT_FOR: ${{ inputs.wait-for }}
+        INPUT_WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        INPUT_HEADERS: ${{ inputs.headers }}
+      run: node "$GITHUB_ACTION_PATH/action.mjs" start
+
+    - name: restep-check
+      id: check
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_PROFILES: ${{ inputs.profiles }}
+        INPUT_WRITES: ${{ inputs.writes }}
+        INPUT_HEADERS: ${{ inputs.headers }}
+        INPUT_RESTEP_CHECK: ${{ inputs.restep-check }}
+      run: node "$GITHUB_ACTION_PATH/action.mjs" check
+
+    - name: restep-diff
+      id: diff
+      if: inputs.base-discovery != ''
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_HEADERS: ${{ inputs.headers }}
+        INPUT_BASE_DISCOVERY: ${{ inputs.base-discovery }}
+        INPUT_RESTEP_DIFF: ${{ inputs.restep-diff }}
+      run: node "$GITHUB_ACTION_PATH/action.mjs" diff
+
+    - name: Informe
+      id: report
+      if: always()
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_BASE_DISCOVERY: ${{ inputs.base-discovery }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: node "$GITHUB_ACTION_PATH/action.mjs" report
+
+    - name: Parar la API
+      if: always() && inputs.start-command != ''
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/action.mjs" stop

@@ -201,7 +201,7 @@ try {
   const diffPkg = join(here, '../restep-diff/package.json');
   if (existsSync(diffPkg) && existsSync(join(here, '../restep-check/npm'))) {
     const diffVersion = JSON.parse(readFileSync(diffPkg, 'utf8')).version;
-    ok(action.inputs['restep-diff'].default === `npx --yes github:restep-spec/restep-diff#v${diffVersion}`, `restep-diff por defecto en la v${diffVersion}`);
+    ok(action.inputs['restep-diff'].default === `npx --yes restep-diff@${diffVersion.split(".").slice(0, 2).join(".")}`, `restep-diff por defecto en la v${diffVersion}`);
   }
   ok(readFileSync(join(here, 'action.mjs'), 'utf8').includes(`'${action.inputs['restep-diff'].default}'`), 'action.mjs usa el mismo restep-diff por defecto');
   const syntax = spawnSync(process.execPath, ['--check', join(here, 'action.mjs')], { encoding: 'utf8' });

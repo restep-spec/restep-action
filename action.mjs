@@ -209,7 +209,7 @@ async function diff() {
       if (!existsSync(basePath)) throw new Error(`No existe el descubrimiento base ${base}.`);
       if (!isDiscovery(readJson(basePath))) throw new Error(`${base} no es un documento de descubrimiento (le falta restep).`);
     }
-    const command = input('restep-diff') || 'npx --yes github:restep-spec/restep-diff#v0.2.0';
+    const command = input('restep-diff') || 'npx --yes restep-diff@0.2';
     const args = [basePath, file('new-discovery.json'), '--markdown', '--fail-on', 'breaking'];
     console.log(`${command} ${args.join(' ')}`);
     const r = runCommand(command, args);

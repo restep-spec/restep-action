@@ -55,7 +55,7 @@ inputs:
   restep-diff:
     description: Orden que ejecuta restep-diff
     required: false
-    default: npx --yes github:restep-spec/restep-diff#v0.2.0
+    default: npx --yes restep-diff@0.2
   github-token:
     description: Token para comentar en la PR (necesita pull-requests write)
     required: false

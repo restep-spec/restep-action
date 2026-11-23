@@ -83,7 +83,7 @@ otro origen no le manda las cabeceras.
 | `fail-on-error` | `true` | Falla el job si falla un DEBE, falta un perfil, hay un cambio incompatible o algo no se ha podido comprobar |
 | `restep-check` | `npx --yes restep-check@0.9` | Orden que ejecuta restep-check (la 0.9 comprueba el borrador 6) |
 | ~~~~ | | | que ejecuta restep-check |
-| `restep-diff` | `npx --yes github:restep-spec/restep-diff#v0.2.0` | Orden que ejecuta restep-diff (0.2 clasifica según el borrador 6) |
+| `restep-diff` | `npx --yes restep-diff@0.2` | Orden que ejecuta restep-diff (0.2 clasifica según el borrador 6) |
 | `github-token` | `github.token` | Token para `gh` |
 
 ## Salidas
@@ -139,13 +139,6 @@ en la prueba.
 - El comentario se busca por un marcador con la URL de la API: dos ejecuciones de la acción
   con la misma `url` en el mismo PR comparten comentario.
 - No se ha ejecutado en GitHub de verdad: la prueba simula el runner.
-- El valor por defecto de `restep-check` (`restep-check@0.9`) necesita que la 0.9 esté publicada
-  en npm; mientras no lo esté, pasa la orden en el input.
-- El de `restep-diff` (`github:restep-spec/restep-diff#v0.2.0`, las reglas del borrador 6) usa la
-  etiqueta `v0.2.0` de su repositorio.
-- Para usarla con `uses: restep-spec/restep-action@v0` hay que publicarla en su propio
-  repositorio (como el espejo de restep-check); mientras, se puede copiar la carpeta al
-  repositorio y usarla con `uses: ./ruta/a/restep-action`.
 
 ## Borrador 6
 

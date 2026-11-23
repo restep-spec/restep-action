@@ -60,10 +60,16 @@ const headerObject = () => Object.fromEntries(headers().map((h) => [h.slice(0, h
 
 // Ejecuta una orden del usuario (como "npx --yes restep-check@0.4") con argumentos sin pasar por
 // la shell: bash -c '<orden> "$@"' -- args…
+// La salida estándar va a un archivo y no a una tubería: un proceso de Node que termina con
+// process.exit() pierde lo que no ha vaciado en una tubería (restep-check 0.8.0 corta su JSON en
+// 64 KiB así), mientras que la escritura en un archivo es síncrona.
 function runCommand(command, args) {
-  const r = spawnSync('bash', ['-c', `${command} "$@"`, 'restep-action', ...args],
-    { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env });
-  return { exit: r.status ?? 2, stdout: r.stdout ?? '', stderr: (r.stderr ?? '') + (r.error ? String(r.error) : '') };
+  const out = file(`stdout-${process.pid}.txt`);
+  const r = spawnSync('bash', ['-c', `${command} "$@" > "$RESTEP_ACTION_STDOUT"`, 'restep-action', ...args],
+    { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...env, RESTEP_ACTION_STDOUT: out } });
+  const stdout = existsSync(out) ? readFileSync(out, 'utf8') : '';
+  rmSync(out, { force: true });
+  return { exit: r.status ?? 2, stdout, stderr: (r.stderr ?? '') + (r.error ? String(r.error) : '') };
 }
 
 // ── start / stop ──────────────────────────────────────────────────────────────
@@ -108,13 +114,13 @@ function stop() {
 }
 
 // ── check ─────────────────────────────────────────────────────────────────────
-function check() {
+async function check() {
   const url = apiUrl();
   rmSync(file('check.json'), { force: true });
   const args = [url, '--json'];
   if (bool('writes')) args.push('--writes');
   for (const h of headers()) args.push('-H', h);
-  const command = input('restep-check') || 'npx --yes restep-check@0.4';
+  const command = input('restep-check') || 'npx --yes restep-check@0.9';
   console.log(`${command} ${args.map((a) => (/^authorization:/i.test(a) ? 'Authorization: ***' : a)).join(' ')}`);
   const r = runCommand(command, args);
   if (r.stderr) process.stderr.write(r.stderr);
@@ -123,7 +129,12 @@ function check() {
   const announced = report ? [...(report.profiles ?? []), ...(report.extensions ?? [])] : [];
   const required = input('profiles').split(/[\s,]+/).filter(Boolean);
   const missing = report ? required.filter((p) => !announced.includes(p)) : [];
-  writeJson(file('check.json'), { url, exit: r.exit, stderr: r.stderr.slice(-4000), report, required, missing });
+  // La versión que declara la API, para el resumen (restep-check no la da en su JSON).
+  let declared = null;
+  if (report) {
+    try { declared = (await fetchDiscovery(url, headerObject())).restep; } catch { /* sin descubrimiento legible: no hay fila */ }
+  }
+  writeJson(file('check.json'), { url, exit: r.exit, stderr: r.stderr.slice(-4000), report, required, missing, declared });
   if (!report) console.log(`restep-check no ha dado un informe JSON (código ${r.exit}).`);
   else {
     const n = (s) => report.results.filter((x) => x.status === s).length;
@@ -135,6 +146,20 @@ function check() {
 // ── diff ──────────────────────────────────────────────────────────────────────
 const isDiscovery = (d) => d && typeof d === 'object' && !Array.isArray(d) && typeof d.restep === 'string';
 
+// La versión declarada en «restep» (§1.1): gramática ABNF, mayor 1 para ser Restep 1, y sufijo
+// -draft.N o -rc.N para un borrador o un candidato, que no da las garantías de una versión publicada.
+const VERSION_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(draft|rc)\.(0|[1-9][0-9]*))?$/;
+function describeVersion(v) {
+  if (typeof v !== 'string') return null;
+  const m = VERSION_RE.exec(v);
+  if (!m) return { value: v, text: 'no sigue la gramática de §1.1: no es un documento de descubrimiento de Restep 1', restep1: false };
+  if (m[1] !== '1') return { value: v, text: `versión mayor ${m[1]}: no es Restep 1 (§1.1)`, restep1: false };
+  const base = `${m[1]}.${m[2]}`;
+  if (m[3] === 'draft') return { value: v, text: `borrador ${m[4]} de ${base}: sin las garantías de una versión publicada (§1.1)`, restep1: true };
+  if (m[3] === 'rc') return { value: v, text: `candidata ${m[4]} de ${base}: sin las garantías de una versión publicada (§1.1)`, restep1: true };
+  return { value: v, text: 'versión publicada', restep1: true };
+}
+
 function linkTargets(header, rel) {
   if (!header) return [];
   return header.split(/,(?=\s*<)/).flatMap((part) => {
@@ -144,12 +169,19 @@ function linkTargets(header, rel) {
   });
 }
 
+// §3: no se sigue un enlace cuyo esquema no sea https ni el de la raíz (data:, file:…); §4.3: las
+// cabeceras (credenciales) solo van al origen de la URL pedida.
 async function fetchDiscovery(url, hdrs) {
   let res = await fetch(url, { headers: { accept: 'application/json', ...hdrs } });
   let doc = await res.json().catch(() => null);
   if (!isDiscovery(doc)) {
+    const root = new URL(url);
     for (const href of linkTargets(res.headers.get('link'), 'service-desc')) {
-      const r = await fetch(new URL(href, url), { headers: { accept: 'application/json', ...hdrs } });
+      let target;
+      try { target = new URL(href, url); } catch { continue; }
+      if (target.protocol !== 'https:' && target.protocol !== root.protocol) continue;
+      const same = target.origin === root.origin;
+      const r = await fetch(target, { headers: { accept: 'application/json', ...(same ? hdrs : {}) } });
       const d = await r.json().catch(() => null);
       if (isDiscovery(d)) { doc = d; res = r; break; }
     }
@@ -177,7 +209,7 @@ async function diff() {
       if (!existsSync(basePath)) throw new Error(`No existe el descubrimiento base ${base}.`);
       if (!isDiscovery(readJson(basePath))) throw new Error(`${base} no es un documento de descubrimiento (le falta restep).`);
     }
-    const command = input('restep-diff') || 'npx --yes github:restep-spec/restep-diff#v0.1.0';
+    const command = input('restep-diff') || 'npx --yes github:restep-spec/restep-diff#v0.2.0';
     const args = [basePath, file('new-discovery.json'), '--markdown', '--fail-on', 'breaking'];
     console.log(`${command} ${args.join(' ')}`);
     const r = runCommand(command, args);
@@ -228,6 +260,8 @@ async function report() {
     const r = c.report;
     rows.push(`| Conformidad | ${cs.failures ? `**${cs.failures} DEBE fallan**` : 'sin fallos de DEBE'} · ${cs.warnings} avisos · ${cs.passed} correctas · ${cs.skipped} omitidas (restep-check ${r.version}${r.writes ? ', con --writes' : ', solo lectura'}) |`);
     const announced = [...(r.profiles ?? []), ...(r.extensions ?? [])].join(', ');
+    const v = describeVersion(c.declared);
+    if (v) rows.push(`| Versión declarada | \`${cell(v.value)}\`: ${v.restep1 ? v.text : `**${v.text}**`} |`);
     rows.push(`| Perfiles | ${announced}${c.missing.length ? ` · **no anuncia: ${c.missing.join(', ')}**` : ''} |`);
   } else rows.push('| Conformidad | **no se ha podido comprobar** |');
   if (input('base-discovery')) {

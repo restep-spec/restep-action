@@ -8,7 +8,10 @@ GitHub Action compuesta que comprueba una API Restep 1 en cada pull request:
    (y `--writes` si se pide) y comprueba que la API anuncia los perfiles de `profiles`.
 3. Si se le da el descubrimiento de la rama base (`base-discovery`), lo compara con el actual
    con `restep-diff` y marca los cambios incompatibles (§5.5).
-4. Escribe el resultado en el resumen del job (`$GITHUB_STEP_SUMMARY`), con una anotación por
+4. Escribe el resultado en el resumen del job, con la versión que declara la API en `restep`
+   (§1.1: un `1.0-draft.6` o un `1.0-rc.1` sale como borrador o candidata, sin las garantías de
+   una versión publicada, y una versión mayor distinta de 1, o que no sigue la gramática, como
+   «no es Restep 1») (`$GITHUB_STEP_SUMMARY`), con una anotación por
    cada DEBE que falla, y, con `comment: true`, como comentario de la PR, siempre el mismo
    (uno por URL de API), que se actualiza en cada ejecución.
 5. Para la API, aunque algo haya fallado.
@@ -59,7 +62,10 @@ jobs:
 
 Si la rama base está desplegada (por ejemplo en un entorno de preproducción),
 `base-discovery` también admite una URL: la acción pide su descubrimiento. Las cabeceras de
-`headers` solo se envían a esa URL si es del mismo origen que `url` (§4.3).
+`headers` solo se envían a esa URL si es del mismo origen que `url` (§4.3). Si la raíz no es un
+descubrimiento y apunta a uno con `Link: rel="service-desc"`, la acción sigue el primer destino que
+lo sea, pero no uno cuyo esquema no sea `https` ni el de la raíz (`data:`, `file:`, §3), y a uno de
+otro origen no le manda las cabeceras.
 
 ## Inputs
 
@@ -75,8 +81,9 @@ Si la rama base está desplegada (por ejemplo en un entorno de preproducción),
 | `base-discovery` | | Descubrimiento de la rama base: archivo (relativo a `GITHUB_WORKSPACE`) o URL |
 | `comment` | `false` | `true` comenta en la PR (necesita `pull-requests: write`). Fuera de una PR solo escribe el resumen |
 | `fail-on-error` | `true` | Falla el job si falla un DEBE, falta un perfil, hay un cambio incompatible o algo no se ha podido comprobar |
-| `restep-check` | `npx --yes restep-check@0.4` | Orden que ejecuta restep-check |
-| `restep-diff` | `npx --yes github:restep-spec/restep-diff#v0.1.0` | Orden que ejecuta restep-diff |
+| `restep-check` | `npx --yes restep-check@0.9` | Orden que ejecuta restep-check (la 0.9 comprueba el borrador 6) |
+| ~~~~ | | | que ejecuta restep-check |
+| `restep-diff` | `npx --yes github:restep-spec/restep-diff#v0.2.0` | Orden que ejecuta restep-diff (0.2 clasifica según el borrador 6) |
 | `github-token` | `github.token` | Token para `gh` |
 
 ## Salidas
@@ -118,8 +125,11 @@ ejecuta los pasos en local simulando el runner: las variables `GITHUB_*` y `RUNN
 servidor de referencia en los puertos 8897-8899, el `restep-check` de `public/tools/` y dobles
 de `gh` y `restep-diff`. Recorre: arranque, comprobación y diff sin cambios con comentario
 nuevo; cambio incompatible, perfil que falta y `--writes` actualizando el mismo comentario;
-API ya arrancada con oauth fuera de una PR; API que no arranca; `fail-on-error: false`; y un
-DEBE que falla.
+API ya arrancada con oauth fuera de una PR; API que no arranca; `fail-on-error: false`; un
+DEBE que falla; y una API de versión mayor 2 cuyo descubrimiento está tras un `service-desc`
+(con otro `data:` delante que no se sigue y otro de otro origen que no recibe credenciales).
+Lo que anuncia la referencia (perfiles y extensiones) se lee de su descubrimiento, no se escribe
+en la prueba.
 
 ## Límites
 
@@ -129,9 +139,22 @@ DEBE que falla.
 - El comentario se busca por un marcador con la URL de la API: dos ejecuciones de la acción
   con la misma `url` en el mismo PR comparten comentario.
 - No se ha ejecutado en GitHub de verdad: la prueba simula el runner.
+- El valor por defecto de `restep-check` (`restep-check@0.9`) necesita que la 0.9 esté publicada
+  en npm; mientras no lo esté, pasa la orden en el input.
+- El de `restep-diff` (`github:restep-spec/restep-diff#v0.2.0`, las reglas del borrador 6) usa la
+  etiqueta `v0.2.0` de su repositorio.
 - Para usarla con `uses: restep-spec/restep-action@v0` hay que publicarla en su propio
   repositorio (como el espejo de restep-check); mientras, se puede copiar la carpeta al
   repositorio y usarla con `uses: ./ruta/a/restep-action`.
+
+## Borrador 6
+
+La acción no es un cliente de la API: delega en restep-check (la conformidad) y restep-diff (la
+compatibilidad). De los requisitos de clientes de §12.2 le tocan los de pedir el descubrimiento:
+los cumple (objeto JSON con `restep` de tipo cadena, primer `service-desc` que sea descubrimiento,
+esquemas de enlace de §3, credenciales solo al origen de §4.3). No usa ninguna parte experimental
+ni escribe nada en la API. Si la versión declarada no es Restep 1, lo dice en el resumen; quien
+falla la comprobación es restep-check (`discovery.version`).
 
 ## Dudas sobre la spec
 

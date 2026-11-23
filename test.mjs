@@ -190,6 +190,20 @@ try {
     const m = /steps\.([a-z-]+)\.outputs/.exec(o.value);
     ok(m && ids.includes(m[1]), `la salida ${k} apunta a un paso que existe`);
   }
+  // Los valores por defecto apuntan a las versiones de este repositorio: restep-check y restep-diff del borrador 6.
+  // En la web, el paquete generado de restep-check; en el espejo, la copia de vendor/.
+  const checkPkg = join(here, '../restep-check/npm/package.json');
+  const checkVersion = existsSync(checkPkg)
+    ? JSON.parse(readFileSync(checkPkg, 'utf8')).version
+    : /VERSION = '([0-9.]+)'/.exec(readFileSync(join(here, 'vendor/restep-check.mjs'), 'utf8'))[1];
+  ok(action.inputs['restep-check'].default === `npx --yes restep-check@${checkVersion.split('.').slice(0, 2).join('.')}`, `restep-check por defecto en la ${checkVersion}`);
+  // restep-diff solo está al lado en el repositorio de la web; en el espejo no se puede comprobar.
+  const diffPkg = join(here, '../restep-diff/package.json');
+  if (existsSync(diffPkg) && existsSync(join(here, '../restep-check/npm'))) {
+    const diffVersion = JSON.parse(readFileSync(diffPkg, 'utf8')).version;
+    ok(action.inputs['restep-diff'].default === `npx --yes github:restep-spec/restep-diff#v${diffVersion}`, `restep-diff por defecto en la v${diffVersion}`);
+  }
+  ok(readFileSync(join(here, 'action.mjs'), 'utf8').includes(`'${action.inputs['restep-diff'].default}'`), 'action.mjs usa el mismo restep-diff por defecto');
   const syntax = spawnSync(process.execPath, ['--check', join(here, 'action.mjs')], { encoding: 'utf8' });
   ok(syntax.status === 0, `action.mjs compila: ${syntax.stderr}`);
 
@@ -225,7 +239,11 @@ try {
   tmpServer.kill();
   await isDown(PORT_A);
   writeFileSync(join(workspace, 'base-same.json'), JSON.stringify(disc));
-  writeFileSync(join(workspace, 'base-more.json'), JSON.stringify({ ...disc, collections: { ...disc.collections, authors: { path: '/authors' } } }));
+  // Lo que anuncia la referencia (en el borrador 6, también cache y la extensión inherit), tal como
+  // lo escribe el resumen: perfiles y extensiones separados por comas.
+  const announcedRef = [...disc.profiles, ...(disc.extensions ?? [])].join(', ');
+  // Una colección que la referencia no tiene (desde que tiene authors, ya no sirve esa).
+  writeFileSync(join(workspace, 'base-more.json'), JSON.stringify({ ...disc, collections: { ...disc.collections, publishers: { path: '/publishers' } } }));
 
   console.log('2. Arranca la API, comprueba, compara sin cambios y comenta en la PR');
   const sa = sim('a');
@@ -238,7 +256,9 @@ try {
   ok(a.outputs['check-failures'] === '0' && a.outputs.breaking === 'false', 'sin fallos ni cambios incompatibles');
   const sumA = readFileSync(sa.summary, 'utf8');
   ok(sumA.includes(`## Restep correcto: http://localhost:${PORT_A}/`), 'el resumen del job lleva el título');
-  ok(sumA.includes('| Perfiles | core, query, writes |') && sumA.includes('sin cambios incompatibles'), 'el resumen lleva perfiles y compatibilidad');
+  ok(sumA.includes(`| Perfiles | ${announcedRef} |`) && sumA.includes('sin cambios incompatibles'), `el resumen lleva perfiles y compatibilidad (${announcedRef})`);
+  ok(disc.restep === '1.0-draft.6' && sumA.includes('| Versión declarada | `1.0-draft.6`: borrador 6 de 1.0: sin las garantías de una versión publicada (§1.1) |'),
+    'el resumen lleva la versión declarada y dice que es un borrador');
   ok(sumA.includes('Sin cambios incompatibles.'), 'el resumen incluye la salida de restep-diff');
   ok(existsSync(a.outputs['summary-file']), 'summary-file existe');
   let calls = ghCalls();
@@ -257,7 +277,7 @@ try {
   ok(b.step('Informe').exit === 1, 'el informe termina con 1');
   ok(b.outputs.result === 'fail' && b.outputs.breaking === 'true', 'result = fail y breaking = true');
   const sumB = readFileSync(sb.summary, 'utf8');
-  ok(sumB.includes('no anuncia: sync') && sumB.includes('Se elimina la colección authors') && sumB.includes('con --writes'), 'el resumen explica el perfil, el cambio y --writes');
+  ok(sumB.includes('no anuncia: sync') && sumB.includes('Se elimina la colección publishers') && sumB.includes('con --writes'), 'el resumen explica el perfil, el cambio y --writes');
   ok(b.step('Informe').stdout.includes('::error title=restep-diff::'), 'anotación de error para el cambio incompatible');
   calls = ghCalls();
   ok(calls.length === 4 && calls[3].method === 'PATCH' && calls[3].path === 'repos/restep-spec/ejemplo/issues/comments/1000', 'actualiza el comentario 1000');
@@ -272,7 +292,7 @@ try {
   const c = runAction(action, { ...common, url: `http://localhost:${PORT_B}/`, headers: 'Authorization: Bearer secreto', profiles: 'oauth', comment: 'true' }, sc);
   ok(c.step('Arrancar la API').skipped && c.step('restep-diff').skipped && c.step('Parar la API').skipped, 'se saltan arrancar, diff y parar');
   ok(c.outputs.result === 'pass', `result = pass con el token (${readFileSync(sc.summary, 'utf8').slice(0, 800)})`);
-  ok(readFileSync(sc.summary, 'utf8').includes('core, query, writes, oauth'), 'anuncia oauth');
+  ok(readFileSync(sc.summary, 'utf8').includes(`| Perfiles | ${announcedRef}, oauth |`), 'anuncia oauth');
   ok(c.step('Informe').stdout.includes('no es una PR'), 'fuera de una PR no comenta');
   ok(ghCalls().length === 4, 'no llama a gh');
   ok(!c.step('restep-check').stdout.includes('secreto'), 'el token no sale en el registro');
@@ -312,6 +332,37 @@ process.exit(1);`);
   ok(sumF.includes('| `core.put` | books | PUT da 200 \\| no 405 | MUST · [§5.1]('), 'fila de la tabla con la barra escapada');
   ok(sumF.includes('<summary>Avisos (1)</summary>'), 'avisos plegados');
   ok(f.step('Informe').stdout.includes('::error title=restep core.put::[books] PUT da 200 | no 405 (§5.1)'), 'anotación del fallo');
+
+  console.log('8. Versión mayor 2 y service-desc con data: o de otro origen');
+  // Un servidor mínimo: / no es descubrimiento y apunta con service-desc primero a data: (§3: no se
+  // sigue), luego a otro origen (§4.3: sin credenciales) y por último a su propio /d.json.
+  const seen = [];
+  const { createServer } = await import('node:http');
+  const mk = (handler) => new Promise((r) => { const sv = createServer(handler); sv.listen(0, '127.0.0.1', () => r(sv)); });
+  const other = await mk((req, res) => { seen.push({ host: 'otro', path: req.url, auth: req.headers.authorization ?? null }); res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"no": "descubrimiento"}'); });
+  const otherUrl = `http://127.0.0.1:${other.address().port}/d.json`;
+  const api = await mk((req, res) => {
+    seen.push({ host: 'api', path: req.url, auth: req.headers.authorization ?? null });
+    if (req.url === '/d.json') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ restep: '2.0', profiles: ['core'], collections: {} })); return; }
+    res.writeHead(200, { 'content-type': 'application/json', link: `<data:application/json,%7B%22restep%22%3A%221.0%22%7D>; rel="service-desc", <${otherUrl}>; rel="service-desc", </d.json>; rel="service-desc"` });
+    res.end('{}');
+  });
+  const apiUrl = `http://127.0.0.1:${api.address().port}/`;
+  const fake2 = join(bin, 'check-stub2.mjs');
+  writeFileSync(fake2, `console.log(JSON.stringify({ root: process.argv[2], profiles: ['core'], extensions: [], writes: false, version: '9.9.9', results: [] }));`);
+  // Los pasos se ejecutan en un proceso aparte y asíncrono: runAction usa spawnSync, que bloquearía
+  // el bucle de eventos y estos servidores, que viven en este proceso, no responderían.
+  const env8 = { ...process.env, ...sim('g2').env, INPUT_URL: apiUrl, INPUT_HEADERS: 'Authorization: Bearer secreto', INPUT_RESTEP_CHECK: `node ${JSON.stringify(fake2)}` };
+  const child = spawn(process.execPath, [join(here, 'action.mjs'), 'check'], { env: env8, stdio: 'ignore' });
+  await new Promise((r) => child.on('exit', r));
+  const check8 = JSON.parse(readFileSync(join(env8.RUNNER_TEMP, 'restep-action', 'check.json'), 'utf8'));
+  ok(check8.declared === '2.0', `sigue el service-desc propio y lee la versión (${check8.declared})`);
+  ok(!seen.some((x) => x.host === 'otro' && x.auth), 'no manda credenciales al service-desc de otro origen');
+  ok(seen.some((x) => x.host === 'api' && x.path === '/d.json' && x.auth === 'Bearer secreto'), 'manda las credenciales al de su origen');
+  const rep8 = spawn(process.execPath, [join(here, 'action.mjs'), 'report'], { env: { ...env8, INPUT_FAIL_ON_ERROR: 'false' }, stdio: 'ignore' });
+  await new Promise((r) => rep8.on('exit', r));
+  ok(readFileSync(env8.GITHUB_STEP_SUMMARY, 'utf8').includes('| Versión declarada | `2.0`: **versión mayor 2: no es Restep 1 (§1.1)** |'), 'una versión mayor 2 sale marcada como no Restep 1');
+  api.close(); other.close();
 } catch (err) {
   failed++;
   console.log(`  ERROR: ${err.stack}`);

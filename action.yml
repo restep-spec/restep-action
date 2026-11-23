@@ -51,11 +51,11 @@ inputs:
   restep-check:
     description: Orden que ejecuta restep-check
     required: false
-    default: npx --yes restep-check@0.4
+    default: npx --yes restep-check@0.9
   restep-diff:
     description: Orden que ejecuta restep-diff
     required: false
-    default: npx --yes github:restep-spec/restep-diff#v0.1.0
+    default: npx --yes github:restep-spec/restep-diff#v0.2.0
   github-token:
     description: Token para comentar en la PR (necesita pull-requests write)
     required: false

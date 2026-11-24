@@ -2,7 +2,7 @@
 # Los valores de los inputs llegan a los pasos como variables de entorno, nunca interpolados en
 # el script, para que un valor con comillas o $() no se ejecute.
 name: Restep check
-description: Comprueba la conformidad con Restep 1 (restep-check) y, con un descubrimiento base, la compatibilidad (restep-diff)
+description: Checks Restep 1 conformance (restep-check) and, given a base discovery document, compatibility (restep-diff)
 author: restep
 branding:
   icon: check-circle
@@ -10,69 +10,69 @@ branding:
 
 inputs:
   url:
-    description: Raíz de la API, por ejemplo http://localhost:8080/
+    description: API root, for example http://localhost:8080/
     required: true
   start-command:
-    description: Orden que arranca la API en segundo plano; la acción la para al terminar
+    description: Command that starts the API in the background; the action stops it when done
     required: false
     default: ''
   wait-for:
-    description: URL que debe responder antes de empezar (por defecto, url); solo con start-command
+    description: URL that must respond before starting (defaults to url); only with start-command
     required: false
     default: ''
   wait-timeout:
-    description: Segundos de espera máxima a wait-for
+    description: Maximum seconds to wait for wait-for
     required: false
     default: '60'
   profiles:
-    description: Perfiles y extensiones que la API debe anunciar, separados por comas (core,query,writes)
+    description: Profiles and extensions the API must announce, comma-separated (core,query,writes)
     required: false
     default: ''
   writes:
-    description: true para que restep-check cree, cambie y borre sus propios elementos (--writes)
+    description: true to let restep-check create, change and delete its own items (--writes)
     required: false
     default: 'false'
   headers:
-    description: Cabeceras para todas las peticiones, una por línea (Authorization, Bearer …)
+    description: Headers for every request, one per line (Authorization, Bearer …)
     required: false
     default: ''
   base-discovery:
-    description: Documento de descubrimiento de la rama base (archivo o URL) para comparar con restep-diff
+    description: Discovery document of the base branch (file or URL) to compare with restep-diff
     required: false
     default: ''
   comment:
-    description: true para publicar el resultado como comentario de la PR (actualiza siempre el mismo)
+    description: true to post the result as a PR comment (always updates the same one)
     required: false
     default: 'false'
   fail-on-error:
-    description: true para que el job falle si falla un DEBE, falta un perfil o hay un cambio incompatible
+    description: true to fail the job if a MUST fails, a profile is missing or there is a breaking change
     required: false
     default: 'true'
   restep-check:
-    description: Orden que ejecuta restep-check
+    description: Command that runs restep-check
     required: false
     default: npx --yes restep-check@0.9
   restep-diff:
-    description: Orden que ejecuta restep-diff
+    description: Command that runs restep-diff
     required: false
     default: npx --yes restep-diff@0.2
   github-token:
-    description: Token para comentar en la PR (necesita pull-requests write)
+    description: Token to comment on the PR (needs pull-requests write)
     required: false
     default: ${{ github.token }}
 
 outputs:
   result:
-    description: pass o fail
+    description: pass or fail
     value: ${{ steps.report.outputs.result }}
   check-failures:
-    description: Número de comprobaciones DEBE que fallan
+    description: Number of failing MUST checks
     value: ${{ steps.report.outputs.check-failures }}
   breaking:
-    description: true si restep-diff encuentra cambios incompatibles
+    description: true if restep-diff finds breaking changes
     value: ${{ steps.report.outputs.breaking }}
   summary-file:
-    description: Ruta del informe en Markdown
+    description: Path of the Markdown report
     value: ${{ steps.report.outputs.summary-file }}
 
 runs:

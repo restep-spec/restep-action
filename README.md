@@ -9,7 +9,7 @@ Composite GitHub Action that checks a Restep 1 API on every pull request:
 3. If given the base branch's discovery (`base-discovery`), compares it with the current one
    using `restep-diff` and flags breaking changes (§5.5).
 4. Writes the result to the job summary (`$GITHUB_STEP_SUMMARY`), with the version the API
-   declares in `restep` (§1.1: a `1.0-draft.6` or a `1.0-rc.1` shows up as a draft or candidate,
+   declares in `restep` (§1.1: a `1.0-draft.7` or a `1.0-rc.1` shows up as a draft or candidate,
    without the guarantees of a published version, and a major version other than 1, or one that
    does not follow the grammar, as "not Restep 1"), with one annotation per
    failing MUST, and, with `comment: true`, as a PR comment, always the same one
@@ -81,8 +81,8 @@ to one on another origin.
 | `base-discovery` | | Base branch's discovery: a file (relative to `GITHUB_WORKSPACE`) or a URL |
 | `comment` | `false` | `true` comments on the PR (needs `pull-requests: write`). Outside a PR it only writes the summary |
 | `fail-on-error` | `true` | Fails the job if a MUST fails, a profile is missing, there is a breaking change or something could not be checked |
-| `restep-check` | `npx --yes restep-check@0.9` | Command that runs restep-check (0.9 checks draft 6) |
-| `restep-diff` | `npx --yes restep-diff@0.2` | Command that runs restep-diff (0.2 classifies according to draft 6) |
+| `restep-check` | `npx --yes restep-check@0.10` | Command that runs restep-check (0.9 checks draft 7) |
+| `restep-diff` | `npx --yes restep-diff@0.3` | Command that runs restep-diff (0.2 classifies according to draft 7) |
 | `github-token` | `github.token` | Token for `gh` |
 
 ## Outputs
@@ -121,12 +121,14 @@ No dependencies, no network. Validates `action.yml` with a parser for the YAML s
 used, outputs pointing to steps that exist, no `${{ }}` inside a `run`) and runs the steps
 locally simulating the runner: the `GITHUB_*` and `RUNNER_TEMP` variables, each step's `if:`
 (`always()`, `success()`, comparisons with inputs) and the outputs. Uses the reference server
-on ports 8897-8899, the `restep-check` in `tools/restep-check/` and doubles for `gh` and
+on free ports the system picks (`RESTEP_REF=<file>` tests against another copy of it), the `restep-check` in `tools/restep-check/` and doubles for `gh` and
 `restep-diff`. Covers: start, check and a diff with no changes plus a new comment; a breaking
 change, a missing profile and `--writes` updating the same comment; an already running API with
 oauth outside a PR; an API that fails to start; `fail-on-error: false`; a failing MUST; and an
 API with major version 2 whose discovery sits behind a `service-desc` (with a `data:` one in
-front that is not followed and one on another origin that gets no credentials). What the
+front that is not followed and one on another origin that gets no credentials); and a root that
+answers `401` with a body carrying `restep` (not a discovery document) and links a major version 2
+before a Restep 1 document (the action reads the Restep 1 one). What the
 reference announces (profiles and extensions) is read from its discovery, not written into the
 test.
 
@@ -139,12 +141,14 @@ test.
   `url` on the same PR share a comment.
 - It has not run on real GitHub: the test simulates the runner.
 
-## Draft 6
+## Draft 7
 
 The action is not an API client: it delegates to restep-check (conformance) and restep-diff
 (compatibility). Of the client requirements in §12.2, the ones about fetching the discovery apply,
-and it meets them (JSON object with a string `restep`, first `service-desc` that is a discovery,
-link schemes from §3, credentials only to the origin per §4.3). It uses no experimental part and
+and it meets them (only a `2xx` whose body is a JSON object with a string `restep`; of several
+`service-desc` links, the first target that is a discovery document of Restep 1, keeping one of
+another version only to report it as not Restep 1; link schemes from §3; credentials only to the
+origin per §4.3). It uses no experimental part and
 writes nothing to the API. If the declared version is not Restep 1, the summary says so; the one
 that fails the check is restep-check (`discovery.version`).
 
@@ -157,7 +161,7 @@ that fails the check is restep-check (`discovery.version`).
 ## Code and issues
 
 Code and issues: <https://github.com/restep-spec/restep-action>. That repository is generated from the Restep
-site, where the tool is developed alongside the [specification](https://restep.wubytes.com/1/) and the reference
+site, where the tool is developed alongside the [specification](https://w3id.org/restep/1/) and the reference
 server: `vendor/` and `schema/` are copies from the site so the tests run on their own.
 
 MIT licensed.

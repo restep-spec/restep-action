@@ -1,6 +1,6 @@
-# restep-action · GitHub Action compuesta para comprobar una API Restep 1 en cada PR.
-# Los valores de los inputs llegan a los pasos como variables de entorno, nunca interpolados en
-# el script, para que un valor con comillas o $() no se ejecute.
+# restep-action · composite GitHub Action to check a Restep 1 API on every PR.
+# Input values reach the steps as environment variables, never interpolated into
+# the script, so that a value with quotes or $() is not executed.
 name: Restep check
 description: Checks Restep 1 conformance (restep-check) and, given a base discovery document, compatibility (restep-diff)
 author: restep
@@ -51,11 +51,11 @@ inputs:
   restep-check:
     description: Command that runs restep-check
     required: false
-    default: npx --yes restep-check@0.9
+    default: npx --yes restep-check@0.10
   restep-diff:
     description: Command that runs restep-diff
     required: false
-    default: npx --yes restep-diff@0.2
+    default: npx --yes restep-diff@0.3
   github-token:
     description: Token to comment on the PR (needs pull-requests write)
     required: false
@@ -78,7 +78,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Arrancar la API
+    - name: Start the API
       id: start
       if: inputs.start-command != ''
       shell: bash
@@ -112,7 +112,7 @@ runs:
         INPUT_RESTEP_DIFF: ${{ inputs.restep-diff }}
       run: node "$GITHUB_ACTION_PATH/action.mjs" diff
 
-    - name: Informe
+    - name: Report
       id: report
       if: always()
       shell: bash
@@ -124,7 +124,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
       run: node "$GITHUB_ACTION_PATH/action.mjs" report
 
-    - name: Parar la API
+    - name: Stop the API
       if: always() && inputs.start-command != ''
       shell: bash
       run: node "$GITHUB_ACTION_PATH/action.mjs" stop
